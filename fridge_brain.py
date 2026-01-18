@@ -7,16 +7,16 @@ STREAM_URL = "http://172.20.10.2:81/stream"
 LOG_FILE = "fridge_inventory.log"
 
 # --- ML SETUP ---
-print("Loading Multi-Object Food Model...")
-# This model is specialized for 100+ common food/grocery items
-model = YOLO('yolov8n.pt') # We use the base model, but we will filter for food classes
+print("Loading Smart Food Model (YOLOv8m)...")
+# Using the 'medium' model for better accuracy with items like corn/carrots
+model = YOLO('yolov8m.pt') 
 
-# A list of COCO classes that are food/drink related
-FOOD_IDS = [39, 41, 42, 43, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55] 
-# (These represent: bottle, cup, fork, knife, spoon, bowl, banana, apple, 
-# sandwich, orange, broccoli, carrot, hot dog, pizza, donut, cake)
+# Your specific list mapped to the closest categories the model knows
+# Note: Standard YOLO lacks 'corn' and 'cabbage', so it may label them as 'broccoli' or 'vegetable'
+CORE_FOODS = ['banana', 'carrot', 'hot dog', 'apple', 'orange', 'broccoli', 'pizza', 'sandwich', 'cake']
+# 'sandwich' often covers burgers; 'broccoli' often covers cabbage/corn in general models.
 
-def run_multi_food_monitor():
+def run_fridge_monitor():
     cap = cv2.VideoCapture(STREAM_URL)
     last_log_time = 0
 
@@ -26,38 +26,44 @@ def run_multi_food_monitor():
         ret, frame = cap.read()
         if not ret: continue
 
-        # Run detection
-        results = model(frame, stream=True, conf=0.20)
+        # Run detection with a slightly lower confidence to catch smaller items
+        results = model(frame, stream=True, conf=0.25)
 
         for r in results:
-            # Filter detections to ONLY show the food IDs listed above
-            # This prevents it from labeling your fridge as a 'refrigerator'
             detections = []
             for box in r.boxes:
-                class_id = int(box.cls[0])
-                if class_id in FOOD_IDS:
-                    detections.append(model.names[class_id])
+                label = model.names[int(box.cls[0])]
+                
+                # Check if it's a food-related item
+                # This includes your list AND common extras like bottles/cups
+                if label in CORE_FOODS or label in ['bottle', 'cup', 'bowl', 'donut']:
+                    detections.append(label)
             
-            # Draw the boxes
+            # Draw boxes on the frame
             annotated_frame = r.plot() 
 
-            # Log once per second
+            # Log to console and file every 1 second
             if time.time() - last_log_time >= 1.0:
-                timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+                timestamp = time.strftime("%H:%M:%S")
                 if detections:
-                    # Create a summary: "2 apples, 1 bottle"
-                    summary = ", ".join([f"{detections.count(x)} {x}" for x in set(detections)])
-                    log_entry = f"[{timestamp}] In Fridge: {summary}"
-                    print(log_entry)
+                    # Count occurrences: "2 banana, 1 hot dog"
+                    counts = {x: detections.count(x) for x in set(detections)}
+                    summary = ", ".join([f"{count} {name}" for name, count in counts.items()])
+                    
+                    output = f"[{timestamp}] Seen: {summary}"
+                    print(output)
                     with open(LOG_FILE, "a") as f:
-                        f.write(log_entry + "\n")
+                        f.write(output + "\n")
+                else:
+                    print(f"[{timestamp}] Scanning... (No food detected)")
+                
                 last_log_time = time.time()
 
-        cv2.imshow("Multi-Object Fridge Monitor", annotated_frame)
+        cv2.imshow("Fridge Monitor (Core Food Focus)", annotated_frame)
         if cv2.waitKey(1) & 0xFF == ord('q'): break
 
     cap.release()
     cv2.destroyAllWindows()
 
 if __name__ == "__main__":
-    run_multi_food_monitor()
+    run_fridge_monitor()
