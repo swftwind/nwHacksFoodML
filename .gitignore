@@ -1,0 +1,15 @@
+# Ignore the virtual environment
+venv/
+.venv/
+env/
+
+# Ignore Python cache files
+**/__pycache__/
+*.py[cod]
+*$py.class
+
+# Ignore the debug images we just created
+debug_capture.jpg
+
+# Ignore ML model weights (YOLO downloads these automatically)
+*.pt
